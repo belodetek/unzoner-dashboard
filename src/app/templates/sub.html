@@ -1,0 +1,253 @@
+{# This simple template derives from ``base.html``. See ``base.html`` for
+   more information about template inheritance. #}
+{%- extends "base.html" %}
+
+{# Loads some of the macros included with Flask-Bootstrap. We are using the
+   utils module here to automatically render Flask's flashed messages in a
+   bootstrap friendly manner #}
+{% import "bootstrap/utils.html" as utils %}
+
+
+{% block scripts %}
+    {{ super() }}
+    <script src="https://cdn.jsdelivr.net/clipboard.js/1.5.3/clipboard.min.js"></script>
+    <script>
+    $(function() {
+        new Clipboard('#copy-btn');
+    });
+
+    $(function() {
+        $('[data-toggle="tooltip"]').tooltip();
+    });
+
+    $(function() {
+        $('[data-toggle="popover"]').popover();
+    });
+   
+    </script>
+
+    <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
+    <script>
+      var OneSignal = window.OneSignal || [];
+      OneSignal.push(["init", {
+        appId: '{{ onesignal_appid }}',
+        autoRegister: false,
+        notifyButton: {
+          enable: true,
+          position: 'bottom-left',
+          prenotify: true
+        },
+        safari_web_id: '{{ onesignal_safari_webid }}',
+        persistNotification: false,
+        allowLocalhostAsSecureOrigin: true
+      }]);
+    </script>
+
+    <script>
+    !function() {
+      var t;
+      if (t = window.driftt = window.drift = window.driftt || [], !t.init) return t.invoked ? void (window.console && console.error && console.error("Drift snippet included twice.")) : (t.invoked = !0, 
+      t.methods = [ "identify", "config", "track", "reset", "debug", "show", "ping", "page", "hide", "off", "on" ], 
+      t.factory = function(e) {
+        return function() {
+          var n;
+          return n = Array.prototype.slice.call(arguments), n.unshift(e), t.push(n), t;
+        };
+      }, t.methods.forEach(function(e) {
+        t[e] = t.factory(e);
+      }), t.load = function(t) {
+        var e, n, o, i;
+        e = 3e5, i = Math.ceil(new Date() / e) * e, o = document.createElement("script"), 
+        o.type = "text/javascript", o.async = !0, o.crossorigin = "anonymous", o.src = "https://js.driftt.com/include/" + i + "/" + t + ".js", 
+        n = document.getElementsByTagName("script")[0], n.parentNode.insertBefore(o, n);
+      });
+    }();
+    drift.SNIPPET_VERSION = '0.3.1';
+    drift.load('wuv7zb62c2vt');
+    </script>
+{% endblock %}
+
+{# Inside the ``content`` is where you should place most of your own stuff.
+   This will keep scripts at the page end and a navbar you add on later
+   intact. #}
+{% block content %}
+  <div class="container">
+  {%- with messages = get_flashed_messages(with_categories=True) %}
+  {%- if messages %}
+    <div class="row">
+      <div class="col-md-12">
+        {{utils.flashed_messages(messages)}}
+      </div>
+    </div>
+  {%- endif %}
+  {%- endwith %}
+
+
+<!-- jumbotron start -->
+   
+   {% if username and password %}   
+    <div class="jumbotron text-center">
+      <div class="form-group">
+        <div class="input-group">
+          <input type="text" class="form-control" style="text-align:center;" value="{{ username }}"
+            data-toggle="tooltip" data-placement="top" title="your username">
+          <span class="input-group-btn">
+            <button class="btn btn-success" type="button" id="copy-btn"
+              data-toggle="tooltip" data-placement="button"
+              data-clipboard-text="{{ username }}">Copy
+            </button>
+          </span>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="input-group">
+          <input type="text" class="form-control" style="text-align:center;" value="{{ password }}"
+            data-toggle="tooltip" data-placement="top" title="your password">
+          <span class="input-group-btn">
+            <button class="btn btn-success" type="button" id="copy-btn"
+              data-toggle="tooltip" data-placement="button"
+              data-clipboard-text="{{ password }}">Copy
+            </button>
+          </span>
+        </div>
+      </div>
+    </div>
+   {% endif %}
+   
+<!-- jumbotron end -->
+
+
+<!-- subscription well start -->
+   
+   {% if not username and not password %}
+    <div class="well">
+      <div class="text-primary text-center">Subscribe</div>
+      <div class="help-block"></div>
+      <div class="text-center">
+        <a href="{{ api_host }}/api/v1.0/paypal/billing-agreement/create">
+        <button type="button" class="btn btn-sm btn-default btn-primary">
+          Regular Subscription
+        </button></a>
+      </div>
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">Priced at €9.95 per month, cancel any time.</div>
+    </div>
+   {% endif %}
+   
+<!-- subscription well end -->
+
+
+<!-- cancellation well start -->
+
+   {% if username %}
+    <div class="well">
+      <div class="text-center">
+        <a target="_blank" href="https://www{% if paypal_sandbox %}.sandbox{% endif %}.paypal.com/cgi-bin/webscr?cmd=_profile-recurring-payments&encrypted_profile_id={{ username }}">
+        <button type="button" class="btn btn-sm btn-warning">
+          {{ username }}
+        </button></a>
+      </div>
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">Follow the PayPal link to cancel your subscription.</div>
+    </div>
+   {% endif %}
+   
+<!-- cancellation well end -->
+
+
+<!-- retrieve credentials well start -->
+   
+    <div class="well text-center">
+      <form method="POST" role="form" action="passwd">
+        <div class="row">
+          <div class="col-sm-4 col-sm-offset-4">
+            <div class="input-group">
+              <input id="bb-baid" class="form-control input-sm" type="text"
+                name="baid" {% if username %}value="{{ username }}"{% endif %}
+                placeholder="e.g. I-AGDYQ0HA066X">
+              <span class="input-group-btn">
+                <button class="btn btn-sm btn-default btn-secondary" type="submit"
+                  data-toggle="popover" title="Forgot password" data-trigger="hover"
+                  data-content="Enter the PayPal automatic payment ID or billing agreement ID, which PayPal sent you after you subscribed to black.box Unzoner.">Retrieve
+                  <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+                </button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </form>
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">Retreive credentials for existing PayPal subscription.</div>
+    </div>
+   
+<!-- retrieve credentials well end -->
+
+
+<!-- download well start -->
+   
+    <div class="well">
+      <div class="text-primary text-center">Download</div>
+      <div class="help-block"></div>
+      {% if avail_countries %}
+      <div class="text-center">
+        <figure>
+          {% for c in avail_countries %}
+          <a href="{{ api_host }}/api/v1.0/vpnprovider/blackbox/group/default/name/{{ c.alpha2.upper() }}%20-%20{{ c.quoted }}%20(UDP)/profile" download="blackbox-{{ c.alpha2 }}.ovpn" type="application/x-openvpn-profile">
+            <img src="{{url_for('static', filename='blank.gif')}}" class="flag flag-{{ c.alpha2 }} " alt="{{ c.country }}"/>
+          </a>
+          {% endfor %}
+          <figcaption>(UDP)</figcaption>
+        </figure>
+      </div>
+      <div class="text-center">
+        <figure>
+          {% for c in avail_countries %}
+          <a href="{{ api_host }}/api/v1.0/vpnprovider/blackbox/group/default/name/{{ c.alpha2.upper() }}%20-%20{{ c.quoted }}%20(TCP)/profile" download="blackbox-{{ c.alpha2 }}.ovpn" type="application/x-openvpn-profile">
+            <img src="{{url_for('static', filename='blank.gif')}}"
+              class="flag flag-{{ c.alpha2 }} " alt="{{ c.country }}"
+              data-toggle="popover" title="TCP" data-trigger="hover"
+              data-content="Profiles for native iOS and Android clients."/>
+          </a>
+          {% endfor %}
+          <figcaption>(TCP)</figcaption>
+        </figure>
+      </div>
+      {% else %}
+        <div class="text-center text-warning">All regions offline</div>
+      {% endif %}
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">OpenVPN client configuration profiles</div>
+    </div>
+   
+<!-- download well end -->
+
+
+<!-- tests well start -->
+   
+   {% if avail_countries %}
+    <div class="well">
+      <div class="text-primary text-center">Tests</div>
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">
+        Click <a target="_blank" href="/test">here</a> to see test results and screenshots
+      </div>
+    </div>
+   {% endif %}
+   
+<!-- tests well end -->
+
+
+    <div class="well well-sm text-center"><a target="_blank" href="https://www.youtube.com/watch?v=nn2FB1P_Mn8">Contact Support</a> (<a target="_blank" href="https://stats.uptimerobot.com/mOvZXsAx7">uptime</a>)
+      <div class="text-center text-muted small">
+        Email <a href="mailto:blackbox@unzoner.com">@black.box</a>, IRC <a target="_blank" href="https://webchat.freenode.net/?channels=#netflix-proxy">#netflix-proxy</a> on Freenode or live chat icon bottom right.
+      </div>
+    </div>
+   
+  </div>
+  
+{%- block footer %}
+<div class="text-center text-muted small"><footer>&copy 2019 <a href="http://unzoner.com/" target="_blank">Unzoner</a>; icons by <a target="_blank" href="http://glyphicons.com/">Glyphicons</a>; error pages by <a target="_blank" href="https://statuspage.io/">StatusPage</a></footer></div>
+
+{%- endblock footer %}
+
+{%- endblock content %}

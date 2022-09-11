@@ -1,0 +1,65 @@
+{# This simple template derives from ``base.html``. See ``base.html`` for
+   more information about template inheritance. #}
+{%- extends "base.html" %}
+
+{# Loads some of the macros included with Flask-Bootstrap. We are using the
+   utils module here to automatically render Flask's flashed messages in a
+   bootstrap friendly manner #}
+{% import "bootstrap/utils.html" as utils %}
+
+
+{% block scripts %}
+    {{ super() }}
+{% endblock %}
+
+{# Inside the ``content`` is where you should place most of your own stuff.
+   This will keep scripts at the page end and a navbar you add on later
+   intact. #}
+{% block content %}
+  <div class="container">
+  {%- with messages = get_flashed_messages(with_categories=True) %}
+  {%- if messages %}
+    <div class="row">
+      <div class="col-md-12">
+        {{utils.flashed_messages(messages)}}
+      </div>
+    </div>
+  {%- endif %}
+  {%- endwith %}
+
+   {% if not screenshots %}
+    <div class="well">
+      <div class="text-center text-muted small">No video tests results found</div>
+    </div>
+   {% endif %}
+
+
+<!-- screenshots well start -->
+   {% for screenshot in screenshots %}
+    <div class="well">
+      <div class="text-center text-muted small">Test VPN host {{ screenshot.host }} {% if screenshot.tag %}{{ screenshot.tag }}{% endif %}
+        {% if not screenshot.error_id %}
+         passed <span class="glyphicon glyphicon-ok-circle" aria-hidden="true" style="color:green"></span>
+        {% else %}
+         failed <span class="glyphicon glyphicon-ban-circle" aria-hidden="true" style="color:red"></span>
+        {% endif %}
+        on {{ screenshot.ts }}
+      </div>
+      <div class="help-block"></div>
+      <center>
+        <a href="{{ screenshot.url }}"><img align="middle" src="{{ screenshot.url }}" width="200"></a>
+        {{ video_diags }}
+      </center>
+    </div>
+   {% endfor %}
+<!-- screenshots well end -->
+
+
+  </div>
+  
+{%- block footer %}
+<div class="text-center text-muted small"><footer>&copy 2019 <a href="http://unzoner.com/" target="_blank">Unzoner</a>; icons by <a target="_blank" href="http://glyphicons.com/">Glyphicons</a>; error pages by <a target="_blank" href="https://statuspage.io/">StatusPage</a></footer></div>
+
+{%- endblock footer %}
+
+{%- endblock content %}

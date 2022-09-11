@@ -1,0 +1,9 @@
+.jumbotron {
+  margin-top: 1em;  // add a little space
+}
+
+.col-centered {
+  float: none;
+  margin: 0 auto;
+  margin-top: 1em;
+}
