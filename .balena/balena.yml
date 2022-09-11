@@ -1,0 +1,12 @@
+---
+build-variables:
+  services:
+    main:
+      # https://nuitka.net/
+      - COMPILE_CODE=1
+      - API_HOST=https://api.unzoner.com
+
+build-secrets:
+  global:
+    - source: env
+      dest: env

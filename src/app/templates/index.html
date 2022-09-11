@@ -1,0 +1,1646 @@
+{# This simple template derives from ``base.html``. See ``base.html`` for
+   more information about template inheritance. #}
+{%- extends "base.html" %}
+
+{# Loads some of the macros included with Flask-Bootstrap. We are using the
+   utils module here to automatically render Flask's flashed messages in a
+   bootstrap friendly manner #}
+{% import "bootstrap/utils.html" as utils %}
+
+
+{% block scripts %}
+    {{ super() }}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.12.4/js/bootstrap-select.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/1.7.1/clipboard.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/canvasjs/1.7.0/canvasjs.min.js"></script>
+    <script type="text/javascript" src={{url_for('static', filename='bitcoinaddress-bundle.min.js')}}></script>
+
+    <script type="text/javascript">
+    function date_sort(a, b) {
+        return new Date(b.x) - new Date(a.x);
+    }
+
+
+    (function(){
+        new Clipboard('#copy-btn');
+    })();
+
+
+    // TBC: refactor using https://www.blockchain.com/api/api_websocket
+    // http://websocket.org/echo.html
+	function ws_connect() {
+		var ws = new WebSocket("{{ wss_host }}");
+
+		ws.onclose = function(event) {
+			console.log('WebSocket close: ' + JSON.stringify(event, null, 4));
+			setTimeout(function() {
+				ws_connect();
+			}, 1000);
+		};
+
+		ws.onerror = function(event) {
+			console.error('WebSocket error: ', JSON.stringify(event, null, 4));
+			setTimeout(function() {
+				ws_connect();
+			}, 5000);
+		};
+
+		ws.onopen = function(event) {
+			console.log('WebSocket open: ' + JSON.stringify(event, null, 4));
+			ws.send(JSON.stringify({
+				filter: "event={{ btc_confirm_event }}&addr={{ btc_payment_address }}"
+			}));
+		}
+
+		ws.onmessage = function(event) {
+			console.log('WebSocket message: ' + JSON.stringify(event, null, 4));
+			console.log('event.data: ' + JSON.stringify(event.data, null, 4));
+			var data = JSON.parse(event.data);
+			if (data.confirmations >= {{ btc_confirm }}) {
+				// only on the initial (unconfirmed)
+				if ( data.confirmations == 0 ) {
+					var shortHash = data.hash.substring(0, 6) + "...";
+					console.log('data.hash.substring: ' + shortHash);
+					$('#blockcypher-websocket').replaceWith("<div class=\"text-center text-muted small\">Bitcoin payment confirmed, updating device status...</div>");
+					sleep_wait(10000);
+					window.location.search += '&result=200';
+				}
+			}
+		}
+	}
+
+
+	function updateChart() {
+            var dataPointsRX = [];
+            var dataPointsTX = [];
+            $.getJSON("{{api_host}}/api/v{{api_version}}/device/{{ device_type }}/{{ guid }}/{{ af }}/stats", function(data) {
+		$.each(data, function(key, value) {
+		    dataPointsRX.push({x: new Date(value['dt']), y: parseInt(value['bytesin'])});
+		    dataPointsTX.push({x: new Date(value['dt']), y: parseInt(value['bytesout'])});
+		});
+		dataPointsRX.sort(date_sort);
+		dataPointsTX.sort(date_sort);
+		var chart = new CanvasJS.Chart("chartContainer", {
+                    backgroundColor: "#f4f4f4",
+		    title:{
+			text: null
+		    },
+		    toolTip: {
+			shared: true
+		    },
+		    legend: {
+			horizontalAlign: "center", fontSize: 14,
+			fontWeight: "bold",
+			fontFamily: "calibri",
+			fontColor: "dimGrey",
+			cursor:"pointer",
+			itemclick : function(e) {
+			    if (typeof(e.dataSeries.visible) === "undefined" || e.dataSeries.visible) {
+				e.dataSeries.visible = false;
+			    } else {
+				e.dataSeries.visible = true;
+			    }
+			}
+		    },
+		    axisX: {
+			title: null
+		    },
+		    axisY:{
+			suffix: ' bytes',
+			includeZero: false,
+			interlacedColor: "#d8d8d8"
+		    }, 	
+		    data: [{ 
+			connectNullData: true,
+			name: "received",
+			showInLegend: true,
+			legendMarkerType: "circle",
+			fillOpacity: .3,
+                        type: "area",
+			color: "rgba(40,175,101,0.6)",
+			markerSize: 0,
+			label: null,
+			dataPoints: dataPointsRX
+		    },
+		    {     
+			connectNullData: true,
+			name: "sent",
+			showInLegend: true,
+			legendMarkerType: "square",
+			fillOpacity: .3,
+			type: "area",
+			color: "rgba(0,75,141,0.7)",
+			markerSize: 0,
+			label: null,
+			dataPoints: dataPointsTX
+		    }]
+		});
+		chart.render();
+	    });
+	}
+
+
+    {% if device_type == 5 %}
+    $(function() {
+        $(document).ready(function() {
+            $(document).ajaxStart(function(){
+                // placeholder
+	    });
+	    $(document).ajaxComplete(function(){
+            // placeholder
+	    });
+	    var ajaxSettings = {
+		url: '{{api_host}}/api/v{{api_version}}/vpnproviders/group/default',
+		type: 'GET',
+		dataType : 'json',
+		contentType : 'application/json',
+		retries : 3,
+		timeout: 10000,
+		success: function(response) {
+		    var dropdown=$('#bb-input-providers');
+		    dropdown.empty();
+                    response.sort();
+		    $.each(response,function(i,obj) {
+			if (obj != "{{vpn_provider}}") {
+			    var provider="<option value=\"" + obj + "\">" + obj + "</option>";
+			} else {
+			    var provider="<option selected value=\"" + obj + "\">" + obj + "</option>";
+			}
+			    $(provider).appendTo(dropdown);
+			});
+                        dropdown.selectpicker('refresh');
+		    }
+		};
+            // run initial ajax
+            $.ajax(ajaxSettings).fail(onFail);
+            // on fail, retry by creating a new Ajax deferred
+            function onFail(){
+              if( ajaxSettings.retries-- > 0 )
+                setTimeout(function(){
+                    $.ajax(ajaxSettings).fail(onFail);
+                }, ajaxSettings.timeout);
+            };
+        });
+    });
+
+
+    $(function() {
+        $('#bb-input-providers').change(function() {
+            $(document).ajaxStart(function(){
+            $(document).ajaxStart(function(){
+                // placeholder
+	    });
+	    $(document).ajaxComplete(function(){
+                // placeholder
+	    });	    });
+            $.ajax({
+                url: '{{api_host}}/api/v{{api_version}}/vpnprovider/' + $('#bb-input-providers')[0].value + '/groups',
+                type: 'GET',
+		dataType : 'json',
+		contentType : 'application/json',
+		retries : 3,
+		timeout: 10000,
+                success: function(response) {
+                    var dropdown=$('#bb-input-location-groups');
+                    dropdown.empty();
+                    response.sort();
+                    $.each(response,function(i,obj)
+                    {
+                        var locations="<option value=\"" + obj + "\">" + obj + "</option>";
+                        $(locations).appendTo(dropdown);
+                    });
+                    dropdown.selectpicker('refresh');
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            }); 
+        });
+    });
+
+
+    $(function() {
+        $('#bb-input-location-groups').change(function() {
+            $(document).ajaxStart(function(){
+                // placeholder
+	    });
+	    $(document).ajaxComplete(function(){
+                // placeholder
+	    });
+            $.ajax({
+                url: '{{api_host}}/api/v{{api_version}}/vpnprovider/' + $('#bb-input-providers')[0].value + '/group/' + $('#bb-input-location-groups')[0].value + '/locations',
+                type: 'GET',
+		dataType : 'json',
+		contentType : 'application/json',
+		retries : 3,
+		timeout: 10000,
+                success: function(response) {
+                    var dropdown=$('#bb-input-locations');
+                    dropdown.empty();
+                    $.each(response,function(i,obj)
+                    {
+                        var locations="<option value=\"" + obj.name + "\">" + obj.name + "</option>";
+                        $(locations).appendTo(dropdown);
+                    });
+                    dropdown.selectpicker('refresh');
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            }); 
+        });
+    });
+    {% endif %}
+
+
+    $(document).ready(function() {
+        $('[data-toggle="popover"]').popover(); 
+
+        bitcoinaddress.init({
+            // jQuery selector defining bitcon addresses on the page
+            // needing the boost
+            selector: ".bitcoin-address",
+
+            // Id of the DOM template element we use to decorate the addresses.
+            // This must contain placefolder .bitcoin-address
+            template: "bitcoin-address-template",
+
+            // Passed directly to QRCode.js
+            // https://github.com/davidshimjs/qrcodejs
+            qr : {
+                width: 128,
+                height: 128,
+                colorDark : "#000000",
+                colorLight : "#ffffff"
+            },
+
+            // By default the generated QR code is bitcoin:// URL.
+            // However you might want to change this for altcoins, which do not have
+            // official protocol handlers. Set true to remove bitcoin:// from
+            // QR code.
+            qrRawAddress: false
+        });
+
+        {% if btc_payments and not disabled %}
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms))
+        }
+        async function sleep_wait(ms) {
+            await sleep(ms)
+        }
+        ws_connect();
+        {% if btc_hash %}
+        var hash = "{{ btc_hash }}";
+        var shortHash = hash.substring(0, 12) + "...";
+        $('#bitcoin-hash').replaceWith("<div class=\"text-center text-muted small\" id=\"bitcoin-hash\"><a target=\"_blank\" href=\"https://live.blockcypher.com/btc{% if btc_testnet %}-testnet{% endif %}/tx/{{ btc_hash }}/\">" + shortHash + "</a></div>");          
+        {% endif %}
+        {% endif %}
+
+        {% if stats %}
+        updateChart()
+        setInterval(function(){
+            updateChart()
+	}, 60000);
+        {% endif %}
+    });
+    </script>
+
+    <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
+    <script type="text/javascript">
+    var OneSignal = window.OneSignal || [];
+    OneSignal.push(["init", {
+        appId: '{{ onesignal_appid }}',
+        autoRegister: false,
+        notifyButton: {
+            enable: true,
+            position: 'bottom-left',
+            prenotify: true
+        },
+        safari_web_id: '{{ onesignal_safari_webid }}',
+        persistNotification: false,
+        allowLocalhostAsSecureOrigin: true
+    }]);
+    </script>
+
+    <script type="text/javascript">
+    !function() {
+        var t;
+        if (t = window.driftt = window.drift = window.driftt || [], !t.init) return t.invoked ? void (window.console && console.error && console.error("Drift snippet included twice.")) : (t.invoked = !0,
+        t.methods = [ "identify", "config", "track", "reset", "debug", "show", "ping", "page", "hide", "off", "on" ],
+        t.factory = function(e) {
+            return function() {
+                var n;
+                return n = Array.prototype.slice.call(arguments), n.unshift(e), t.push(n), t;
+            };
+        }, t.methods.forEach(function(e) {
+            t[e] = t.factory(e);
+        }), t.load = function(t) {
+            var e, n, o, i;
+            e = 3e5, i = Math.ceil(new Date() / e) * e, o = document.createElement("script"),
+            o.type = "text/javascript", o.async = !0, o.crossorigin = "anonymous", o.src = "https://js.driftt.com/include/" + i + "/" + t + ".js",
+            n = document.getElementsByTagName("script")[0], n.parentNode.insertBefore(o, n);
+        });
+    }();
+    drift.SNIPPET_VERSION = '0.3.1';
+    drift.load('wuv7zb62c2vt');
+    </script>
+
+{% endblock %}
+
+{# Inside the ``content`` is where you should place most of your own stuff.
+   This will keep scripts at the page end and a navbar you add on later
+   intact. #}
+{% block content %}
+  <div id="bitcoin-address-template" class="bitcoin-address-container" hidden>
+    <div>
+      <span class="bitcoin-address"></span>
+    </div>
+
+    <a href="#" class="bitcoin-address-action bitcoin-address-action-send">
+      <i class="fa fa-btc"></i>
+      Pay from wallet
+    </a>
+
+    <a href="#" class="bitcoin-address-action bitcoin-address-action-copy">
+      <i class="fa fa-copy"></i>
+        Copy
+    </a>
+
+    <a href="#" class="bitcoin-address-action bitcoin-address-action-qr">
+      <i class="fa fa-qrcode"></i>
+        QR code
+    </a>
+
+    <div class="bitcoin-action-hint bitcoin-action-hint-send">
+      Sending payment to the address from locally installed Bitcoin wallet app.
+    </div>
+
+    <div class="bitcoin-action-hint bitcoin-action-hint-copy">
+      Press CTRL + C or &#x2318; + C to copy the Bitcoin address.
+    </div>
+
+    <div class="bitcoin-action-hint bitcoin-action-hint-qr">
+      <p>
+        Scan the QR code with your mobile Bitcoin app to make the payment:
+      </p>
+
+      <div class="bitcoin-address-qr-container">
+        <!-- Filled in by JS on action click -->
+      </div>
+    </div>
+  </div>
+  <div class="container">
+  {%- with messages = get_flashed_messages(with_categories=True) %}
+  {%- if messages %}
+    <div class="row">
+      <div class="col-md-12">
+        {{utils.flashed_messages(messages)}}
+      </div>
+    </div>
+  {%- endif %}
+  {%- endwith %}
+
+    {% if not disabled %}
+   
+    {% if btc_payments and not free %}
+    <div class="well well-sm text-center"
+      data-toggle="popover" title="Bitcoin Payments" data-trigger="hover"
+      data-content="Pay as you go (PAYG) using Bitcoin, priced at {{ btc_price / 100000000 }} BTC per calendar day.
+      Pay for one month access up-front with no further commitment.
+      Free trial period is not available using this payment method.
+      Device will activate pending Bitcoin transaction confirmation, which usually takes a number of minutes.">
+      <div class="text-center text-muted small">Pay with Bitcoin {% if btc_testnet %}(<a target="_blank" href="http://testnetwallet.com/">Testnet</a>) {% endif %}({{ (btc_price / 100000000) * (365 / 12) }} <i class="fa fa-btc"></i>/month)</div>
+      <div class="text-center">
+        <strong class="bitcoin-address"
+          data-bc-amount="{{ (btc_price / 100000000) * (365 / 12) }}"
+          data-bc-label="black.box"
+          data-bc-message="{{ guid }}"
+          data-bc-address="{{ btc_payment_address }}">
+          {{ btc_payment_address }}
+        </strong>
+      </div>
+      <div class="text-center text-muted small" id="blockcypher-websocket">Awaiting payment confirmation...</div>
+    </div>
+    {% endif %}
+
+    {% if paypal_payments and not free and not paypal %}
+   
+    {% if sub_btn == 'TRIAL' %}
+    <div class="well well-sm"
+      data-toggle="popover" title="Trial PayPal Subscription" data-trigger="hover"
+      data-content="First month free trial subscription via PayPal, one per customer. After the expiry of the initial trial period, your account will be charged until you cancel the subscription."">
+      <div class="text-center text-muted small">Subscribe with PayPal {% if paypal_sandbox %}(<a target="_blank" href="https://developer.paypal.com/docs/classic/lifecycle/ug_sandbox/">Sandbox</a>){% endif %}</div>
+      <div class="help-block"></div>
+      <div class="text-center">
+        <a href="{{ paypal_base_url }}/trial">
+          <button type="button" class="btn btn-sm btn-default btn-primary">
+            Free Trial
+          </button></a>
+      </div>
+      <div class="help-block"></div>
+
+      {% if paypal_sandbox %}
+      <div class="text-center text-muted small">PayPal sandbox
+        login <strong>{{ paypal_sandbox_login }}</strong>
+        <button id="copy-btn" class="btn btn-default btn-xs"
+          data-clipboard-text="{{ paypal_sandbox_login }}"
+          data-toggle="popover" title="Clipboard" data-trigger="hover"
+          data-content="Copy PayPal sandbox login to clipboard">
+          <i class="fa fa-clipboard"></i>
+        </button>
+        password <strong>{{ paypal_sandbox_password }}</strong>
+        <button id="copy-btn" class="btn btn-default btn-xs"
+          data-clipboard-text="{{ paypal_sandbox_password }}"
+          data-toggle="popover" title="Clipboard" data-trigger="hover"
+          data-content="Copy PayPal sandbox password to clipboard">
+          <i class="fa fa-clipboard"></i>
+        </button>
+      </div>
+      {% endif %}
+   
+    </div>
+
+    {% elif sub_btn == 'REGULAR' %}
+    <div class="well well-sm"
+      data-toggle="popover" title="Regular PayPal Subscription" data-trigger="hover"
+      data-content="Regular PayPal subscription, your account will be charged, until you cancel the subscription.">
+      <div class="text-center text-muted small">Subscribe with PayPal</div>
+      <div class="help-block"></div>
+      <div class="text-center">
+        <a href="{{ paypal_base_url }}/regular">
+        <button type="button" class="btn btn-sm btn-default btn-primary">
+          Regular Subscription
+        </button></a>
+      </div>
+    </div>
+    {% endif %}
+   
+    {% endif %}
+   
+    {% if not free and btc_expires %}
+
+      {% if btc_expired %}
+      <div class="well well-sm" style="background-color: #ffd699;"
+      {% else %}
+      <div class="well well-sm" style="background-color: #cbe6d3;"
+      {% endif %}
+   
+      data-toggle="popover" title="Bitcoin" data-trigger="hover"
+      data-content="Last Bitcoin payment successful. Your current daily rate is {{ btc_price / 100000000 }} BTC/day.">
+      <div class="text-center text-muted small">Paid with Bitcoin {% if btc_testnet %}(<a target="_blank" href="http://testnetwallet.com/">Testnet</a>){% endif %}</div>
+   
+      {% if btc_expired %}
+        <div class="text-center text-danger">Expired</div>
+      {% else %}
+        <div class="text-center text-success">Expires {{ btc_expires }}</div>
+      {% endif %}
+
+      <div class="text-center text-muted small" id="bitcoin-hash">...</div>
+    </div>
+   
+    {% endif %}
+
+    {% if not free and paypal %}
+    <div class="well well-sm" style="background-color: #cbe6d3;"
+      data-toggle="popover" title="PayPal" data-trigger="hover"
+      data-content="Subscribed, please visit PayPal to cancel.">
+      <div class="text-center text-muted small">Subscribed with PayPal {% if paypal_sandbox %}(<a target="_blank" href="https://developer.paypal.com/docs/classic/lifecycle/ug_sandbox/">Sandbox</a>){% endif %}</div>
+      <div class="help-block"></div>
+      <div class="text-center">
+        <a target="_blank" href="/sub?billing_id={{ paypal }}">
+        <button type="button" class="btn btn-sm btn-default"
+          data-toggle="popover" title="PayPal subscription management" data-trigger="hover"
+           data-content="Click to manage your PayPal subscription.">{{ paypal }}
+           <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+        </button></a>
+      </div>
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">{{ paypal_payer_email }} ({{ paypal_payer_id }})</div>
+    </div>
+    {% endif %}
+   
+    {% if not free and (paypal or (btc_expires and not btc_expired))  %}
+    <div class="well well-sm text-center"
+      data-toggle="popover" title="Countries" data-trigger="hover"
+      data-content="The following {{ avail_countries|length }} countries are available to un-block."> 
+      {% for c in avail_countries %}
+        {% if alpha2 != c.alpha2 %}
+          <a href="config?guid={{ guid }}&name=TARGET_COUNTRY&value={{ c.quoted }}&device_type={{ device_type }}">
+            <img src="{{url_for('static', filename='blank.gif')}}" class="flag flag-{{ c.alpha2 }}" alt="{{ c.country }}"
+            data-toggle="popover" title="{{ c.country }}" data-trigger="hover"
+            data-content="Click the flag to un-block {{ c.country }}."/></a>
+        {% else %}
+          <img id="grayed-out" src="{{url_for('static', filename='blank.gif')}}" class="flag flag-{{ c.alpha2 }}" alt="{{ c.country }}"
+            data-toggle="popover" title="{{ c.country }}" data-trigger="hover"
+            data-content="{{ c.country }} is currently un-blocked, see the pane below."/>
+        {% endif %}
+      {% endfor %}
+      {% if avail_countries|length < 2 %}
+        <div class="text-center text-muted small">No additional countries/regions available, please check back later.</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+
+<!-- controls well start -->
+
+    <div class="well well-sm text-center"
+      data-toggle="popover" title="Application/device controls" data-trigger="hover"
+      data-content="Restart aplication container, reboot or shutdown the physical device.">
+      <div class="text-center text-info small">Controls</div>
+      <div class="help-block"></div>
+      <form method="POST" role="form" action="control">
+        <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+        <button class="btn btn-sm btn-default" type="submit" name="action" value="restart">Restart</button>
+        <button class="btn btn-sm btn-warning" type="submit" name="action" value="reboot">Reboot</button>
+        <button class="btn btn-sm btn-danger" type="submit" name="action" value="shutdown">Shutdown</button>
+      </form>
+    </div>
+
+<!-- controls well end -->
+
+
+<!-- jumbotron start -->
+   
+    <div class="jumbotron text-center"
+
+    {% if status >= 1 and resin_status in ['Idle'] and online_status %}
+      style="background-color:#cbe6d3;"
+    {% else %}
+      style="background-color:#ffd699;"
+    {% endif %}
+   
+    data-toggle="popover" title="{{ device }} at {{ ipaddr }}"
+    data-trigger="hover"
+    data-html="true" data-content="{{ info }}">
+
+<!-- jumbotron primary line(s) start -->
+   
+    {% if not free %}
+      <div class="text-primary">Unblock {{ country }} from ({{ location }})</div>
+    {% endif %}
+   
+    {% if paired %}
+      <div class="text-primary">Pair with <a target="_blank" href="/?guid={{ paired }}">{{ paired[:16] }}...</a></div
+    {% endif %}
+   
+    {% if device_type == 4 %}
+      <div class="text-primary">VPN Server, ready to pair
+      <button id="copy-btn" class="btn btn-default btn-xs"
+        data-clipboard-text="{{ guid }}"
+        data-toggle="popover" title="Clipboard" data-trigger="hover"
+        data-content="Copy this device GUID to clipboard and use it to pair with your other device(s). Do not share the GUIDs, treat them as secret passwords.">
+        <i class="fa fa-clipboard"></i>
+      </button>
+      </div>
+    {% endif %}
+   
+    {% if device_type == 1 %}
+      <div class="text-primary">Exit node</div>
+    {% endif %}
+   
+    {% if device_type == 3 %}
+      <div class="text-primary">Exit node, VPN from ({{ location }}) to {{ country }}</div>
+    {% endif %}
+   
+    {% if device_type == 5 %}
+        {% if vpn_provider and vpn_location %}
+          <div class="text-primary">{{ vpn_provider }} VPN from ({{ location }}) to {{ vpn_location }}</div>
+        {% else %}
+          <div class="text-primary">No active VPN from {{ location }}</div>
+        {% endif %}
+    {% endif %}
+
+<!-- jumbotron primary line(s) end -->
+
+<!-- jumbotron secondary line(s) start -->
+
+    {% if status >= 1 and resin_status in ['Idle'] and online_status %}
+      <div class="help-block"></div>
+
+      {% if device_type == 1 %}
+        <div class="text-center small text-info">This device is discoverable and accepting connections from clients.</div>
+      {% endif %}
+
+      {% if not free %}
+        <div class="text-center small text-info">This device is unblocking
+        {% if not policy_routing %}all{% else %}selected{% endif %} content from {{ country }}.</div>
+      {% endif %}
+
+      {% if paired %}
+        <div class="text-center small text-info">Traffic{% if not policy_routing %}(PR){% endif %} is {{ cipher }} ({{ auth }}) encrypted and routed to the paired VPN server.</div>
+      {% endif %}
+           
+      {% if device_type == 3 %}
+        <div class="text-center small text-info">This device is in (mixed) double-VPN mode.</div>
+      {% endif %}
+               
+      {% if device_type == 4 %}
+        <div class="text-center small text-info">This device is accepting {{ cipher }} ({{ auth }}) encrypted connections from VPN clients.</div>
+      {% endif %}
+
+      {% if device_type == 5 %}
+        <div class="text-center small text-info">Traffic{% if not policy_routing %}(PR){% endif %} is routed via the {{ vpn_location }} VPN.</div>
+      {% endif %}
+
+    {% else %}
+
+      {% if not free and not (paypal or (btc_expires and not btc_expired)) %}
+        <div class="text-center small text-danger">Please subscribe with PayPal or Bitcoin or switch to a free mode.</div>
+
+      {% elif device_type == 5 %}
+        {% if not vpn_username or not vpn_provider or not vpn_location or not vpn_passwd %}
+          <div class="text-center small text-info">Ready to connect.</div>
+        {% else %}
+          <div class="text-center small text-info">Connecting, please <a href="javascript:window.location.reload(true)">refresh</a> in a few moments...</div>
+        {% endif %}
+
+      {% else %}
+        <div class="text-center small text-warning">Working, please <a href="javascript:window.location.reload(true)">refresh</a> in a few moments...</div>
+      {% endif %}
+
+    {% endif %}
+
+<!-- jumbotron secondary line(s) end -->
+
+    {% if device_type not in [1, 4] %}
+    <div class="help-block"></div>
+
+    {% if status >= 1 %}
+    <div class="text-center text-muted small">Connect devices to Wi-Fi SSID
+      <strong>{{ ssid }}</strong>
+      <button id="copy-btn" class="btn btn-default btn-xs"
+        data-clipboard-text="{{ ssid }}"
+        data-toggle="popover" title="Clipboard" data-trigger="hover"
+        data-content="Copy {{ ssid }} to clipboard">
+        <i class="fa fa-clipboard"></i>
+      </button>
+      with password
+      <strong>{{ passphrase }}</strong>
+      <button id="copy-btn" class="btn btn-default btn-xs"
+        data-clipboard-text="{{ passphrase }}"
+        data-toggle="popover" title="Clipboard" data-trigger="hover"
+        data-content="Copy {{ passphrase }} to clipboard">
+        <i class="fa fa-clipboard"></i>
+      </button>
+      or change the default gateway and DNS to
+      <strong>{{ ipaddr }}</strong>
+      <button id="copy-btn" class="btn btn-default btn-xs"
+        data-clipboard-text="{{ ipaddr }}"
+        data-toggle="popover" title="Clipboard" data-trigger="hover"
+        data-content="Copy {{ ipaddr }} to clipboard">
+        <i class="fa fa-clipboard"></i>
+      </button>
+   
+      {% if hw_mode == 0 or hostapd == 0 %}
+        (Wi-Fi not available) 
+      {% endif %}
+   
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+    {% if device_type == 4 %}
+    <div class="help-block"></div>
+    <div class="text-center text-muted small">Forward ports <strong>{{ openvpn_port }}/tcp</strong> and <strong>{{ openvpn_port }}/udp</strong> on your router to 
+      <strong>{{ ipaddr }}</strong>
+      <button id="copy-btn" class="btn btn-default btn-xs"
+        data-clipboard-text="{{ ipaddr }}"
+        data-toggle="popover" title="Clipboard" data-trigger="hover"
+        data-content="Copy {{ ipaddr }} to clipboard">
+        <i class="fa fa-clipboard"></i>
+      </button>
+      {% if upnp < 2 %}
+      <span class="glyphicon glyphicon-warning-sign" aria-hidden="true" style="color:orange"></span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    </div>
+
+<!-- jumbotron end -->
+
+
+<!-- services well start -->
+   
+    <div class="well well-sm text-center">
+      <div class="text-center text-info small">Policy Routing</div>
+      <div class="help-block"></div>
+
+      {% if device_type == 5 and status <= 0 %}
+      <div class="text-center text-muted small text-warning">Not connected.</div>
+      <div class="help-block"></div>
+   
+      {% else %}
+
+      {% if avail_services and not server %}
+      <div class="form-group">
+        <form method="POST" class="form-inline" action="service">
+          <div class="input-group input-group-sm btn-sm">
+            <select class="selectpicker form-control" id="services" name="services"
+              multiple data-actions-box="false" data-width="150px"
+              data-size="5" data-live-search="true"
+              title="Select service" data-none-selected-text="Select service">
+              <option data-hidden="true"></option>
+              <option value="all">all</option>
+              <option value="none">none</option>
+              {% for service in avail_services %}
+              <option {% if service in services %}selected{% endif %} value="{{ service }}">{{ service }}</option>
+              {% endfor %}
+            </select>
+            <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+            <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+            <input class="form-control" type="hidden" name="alpha2" value="{{ alpha2 }}">
+            <input class="form-control" type="hidden" name="country" value="{{ country }}">
+            <span class="input-group-btn">
+              <button class="btn btn-default" type="submit"
+                data-toggle="popover" title="Services" data-trigger="hover"
+                data-content="Select services to policy route.">Update
+                <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+              </button>
+            </span>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not server %}
+      {% if avail_services and not policy_routing %}
+      <div class="text-center text-info small">Everything will be routed via the tunnel interface, except selected services.</div>
+      <div class="help-block"></div>
+      {% else %}
+      <div class="text-center text-info small">Only selected services will be routed via the tunnel interface.</div>
+      <div class="help-block"></div>
+      {% endif %}
+      {% endif %}
+   
+      {% if not avail_services %}
+      <div class="text-center text-muted small text-warning">Policy routing not available for {{ country }}.</div>
+      <div class="help-block"></div>
+      {% endif %}
+
+      {% if server %}
+      <div class="text-center text-muted small text-warning">Policy routing not available in this mode.</div>
+      <div class="help-block"></div>
+      {% endif %}
+   
+      {% endif %}
+
+    </div>
+
+<!-- services well end -->
+
+
+<!-- VPN well start -->
+
+    {% if device_type == 5 %}
+    <div class="well well-sm text-center">
+      <div class="text-center text-info small">VPN Mode</div>
+      <div class="help-block"></div>
+   
+    {% if not vpn_username or not vpn_provider or not vpn_location or not vpn_passwd %}
+      <div class="form-group">
+        <form method="POST" class="form-inline" id="bb-form-providers" role="form" action="vpn">
+          <div class="help-block"></div>
+          <div class="row">
+            <div class="col-centered">
+              <input id="bb-username" placeholder="VPN username" class="form-control" type="text" size="30" name="username" value="{{ vpn_username }}">
+              <div class="help-block"></div>
+              <input id="bb-password" placeholder="VPN password" class="form-control" type="password" size="30" name="password" value="{{ vpn_passwd }}">
+            </div>
+          </div>
+          <div class="help-block"></div>
+          <div class="row">
+            <div class="col-centered">
+              <textarea class="form-control input-sm" id="usercert" placeholder="Optional client certificate" type="textarea" cols="40" rows="2" name="usercert" value="{{ vpn_user_cert }}">{{ vpn_user_cert }}</textarea>
+              <div class="help-block"></div>
+              <textarea class="form-control input-sm" id="userkey" placeholder="Optional private key" type="textarea" cols="40" rows="2" name="userkey" value="{{ vpn_user_key }}">{{ vpn_user_key }}</textarea>
+            </div>
+          </div>
+          <div class="help-block"></div>
+          <div class="row">
+            <div class="col-centered">
+              <select class="selectpicker form-control" id="bb-input-providers" name="providers"
+                data-actions-box="false" data-width="auto" data-live-search="true"
+                title="Select VPN provider" data-none-selected-text="Select VPN provider">
+                <option data-hidden="true"></option>
+              </select>
+              <div class="help-block"></div>
+              <select class="selectpicker form-control" id="bb-input-location-groups" name="groups"
+                data-actions-box="false" data-width="auto" data-live-search="true"
+                title="Select VPN server group" data-none-selected-text="Select VPN server group">
+                <option data-hidden="true"></option>
+              </select>
+              <div class="help-block"></div>
+              <select class="selectpicker form-control" id="bb-input-locations" name="locations"
+                data-actions-box="false" data-width="auto" data-live-search="true"
+                title="Select VPN server" data-none-selected-text="Select VPN server">
+                <option data-hidden="true"></option>
+              </select>
+              <div class="help-block"></div>
+              <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+              <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+              <button class="btn btn-default" type="submit"
+                data-toggle="popover" title="3rd Party VPNs" data-trigger="hover"
+                data-content="Connect to a supported 3rd party VPN service.">Connect
+                <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+              </button>
+              <div class="help-block"></div>
+            </div>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+   
+    {% if vpn_provider and vpn_location and vpn_username and vpn_passwd %}
+      <div class="help-block"></div>
+      <div class="form-group">
+        <form method="POST" class="form-inline" id="bb-form-disconnect" role="form" action="vpn">
+          <div class="help-block"></div>
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <input class="form-control" type="hidden" name="providers" value="">
+          <input class="form-control" type="hidden" name="groups" value="">
+          <input class="form-control" type="hidden" name="locations" value="">
+          <input class="form-control" type="hidden" name="username" value="">
+          <input class="form-control" type="hidden" name="password" value="">
+          <input class="form-control" type="hidden" name="usercert" value="">
+          <input class="form-control" type="hidden" name="userkey" value="">
+          <button class="btn btn-sm btn-default btn-secondary" type="submit">Disconnect</button>
+        </form>
+      </div>
+    {% endif %}
+
+    </div>
+    {% endif %}
+
+<!-- VPN well end -->
+
+
+<!-- pairing well start -->
+
+    {% if paired %}
+    <div class="well well-sm text-center">
+      <div class="text-center text-info small">Pairing</div>
+      <div class="help-block"></div>
+      <form method="POST" role="form" action="unpair">
+        <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+        <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+        <button class="btn btn-sm btn-default btn-secondary" type="submit">Unpair</button>
+      </form>
+    </div>
+    {% endif %}
+
+<!-- pairing well end -->
+
+
+<!-- logs well start -->
+
+    {% if live_logs %}
+    <div class="well well-sm text-center">
+      <div class="text-center text-muted small">Download and install {{ dns_sub_domain }} <a href="static/ca.{{ dns_sub_domain }}.crt" download>CA root</a> to stream logs below.</div>
+      <div class="help-block"></div>
+      <iframe style="width:100%; height:100%; margin:0px; border:0px" src="{{ logs_host }}"></iframe>
+      <div class="text-center text-muted small">Stream <a target="_blank" href="{{ logs_host }}">logs</a> in a new window.</div>
+    </div>
+    {% endif %}
+
+<!-- logs well end -->
+
+
+<!-- screenshots well start -->
+
+    {% if device_type == 2 and not paired %}
+        {% for screenshot in screenshots %}
+          {% if screenshot %}
+          <div class="well well-sm text-center">
+            <div class="text-center text-muted small">Test VPN host {{ screenshot.host }}
+            {% if not screenshot.error_id %}
+            passed <span class="glyphicon glyphicon-ok-circle" aria-hidden="true" style="color:green"></span>
+            {% else %}
+            failed <span class="glyphicon glyphicon-ban-circle" aria-hidden="true" style="color:red"></span>
+            {% endif %}
+            on {{ screenshot.ts }} with <a target="_blank" href="{{ screenshot.url }}">screenshot</a>
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+    {% endif %}
+
+<!-- screenshots well end -->
+
+
+<!-- speedtest well start -->
+
+    {% if not free and (paypal or (btc_expires and not btc_expired)) %}
+    <div class="well well-sm text-center"><a target="_blank" href="https://iperf.fr/">Speed Test</a>
+    <div class="help-block"></div>
+
+      {% if speedtest %}
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">Speed test {{ speedtest.dt }}
+        {% if speedtest.status == 0 %}
+          up: {{ speedtest.up }} down: {{ speedtest.down }} <span class="glyphicon glyphicon-ok-circle" aria-hidden="true" style="color:green"></span>
+        {% else %}
+          failed at {{ speedtest.dt }} with status {{ speedtest.status }} <span class="glyphicon glyphicon-ban-circle" aria-hidden="true" style="color:red"></span>
+        {% endif %}
+      </div>
+      {% else %}
+        <div class="help-block"></div>
+        <div class="text-center text-muted small">No results.</div>
+      {% endif %}
+
+      {% if not speedtest_enqueue %}
+        <div class="help-block"></div>
+        <form method="POST" role="form" action="speedtest">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <button class="btn btn-sm btn-default btn-secondary" type="submit"
+            data-toggle="popover" title="Speed Test" data-trigger="hover"
+            data-content="Schedule a TCP throughput test between your device and the exit node.">Schedule
+            <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+          </button>
+        </form>
+      {% else %}
+        <div class="help-block"></div>
+        <div class="text-center small text-warning">Working, please <a href="javascript:window.location.reload(true)">refresh</a> in a few moments...</div>   
+      {% endif %}
+   
+    </div>
+    {% endif %}
+
+<!-- speedtest well end -->
+
+
+<!-- iotest well start -->
+
+    {% if not free and (paypal or (btc_expires and not btc_expired)) %}
+    <div class="well well-sm text-center"><a target="_blank" href="https://www.jeffgeerling.com/blogs/jeff-geerling/raspberry-pi-microsd-card">I/O Tests</a>
+    <div class="help-block"></div>
+   
+      {% for iotest in iotests %}
+      <div class="help-block"></div>
+      <div class="text-center text-muted small">I/O test {{ iotest.dt }}
+        {% if iotest.status == 0 %}
+          test: {{ iotest.test }} result: {{ iotest.result }} <span class="glyphicon glyphicon-ok-circle" aria-hidden="true" style="color:green"></span>
+        {% else %}
+          failed at {{ iotest.dt }} with status {{ iotest.status }} <span class="glyphicon glyphicon-ban-circle" aria-hidden="true" style="color:red"></span>
+        {% endif %}
+      </div>
+      {% endfor %}
+   
+      {% if not iotests %}
+        <div class="help-block"></div>
+        <div class="text-center text-muted small">No results.</div>
+      {% endif %}
+
+      {% if not iotest_enqueue %}
+        <div class="help-block"></div>
+        <div class="form-group">
+          <form method="POST" class="form-inline" action="iotest">
+            <div class="input-group input-group-sm btn-sm">
+              <select class="selectpicker form-control form-control-sm btn-sm"
+                id="iotest" name="iotest"
+                data-actions-box="false" data-width="150px"
+                data-size="3" data-live-search="true"
+                title="Select I/O test" data-none-selected-text="Select I/O test">
+                <option data-hidden="true"></option>
+                <option value="0">Buffered reads</option>
+                <option value="1">Cached reads</option>
+                <option value="2">Write</option>
+              </select>
+              <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+              <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+              <span class="input-group-btn">
+                <button class="btn btn-default btn-sm" type="submit"
+                  data-toggle="popover" title="I/O Test" data-trigger="hover"
+                  data-content="Schedule an I/O test.">Schedule
+                  <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+                </button>
+              </span>
+            </div>
+          </form>
+        </div>
+      {% else %}
+        <div class="help-block"></div>
+        <div class="text-center small text-warning">Working, please <a href="javascript:window.location.reload(true)">refresh</a> in a few moments...</div>   
+      {% endif %}
+   
+    </div>
+    {% endif %}
+
+<!-- iotest well end -->
+
+
+<!-- stats well start -->
+
+    {% if stats and status > 0 %}
+    <div class="well well-sm bg-white">
+        <div class="text-center text-muted small">VPN bandwidth
+            <div id="chartContainer" style="height: 300px; width: 100%;"></div>
+        </div>
+    </div>
+    {% endif %}
+
+<!-- stats well end -->
+
+
+<!-- config start -->
+
+    <div class="panel">
+    <div class="row">
+
+      {% if device_type in [2, 3, 5] %}
+   
+      <div class="col-sm-3">
+        <label for="bb-hw_mode">Wi-Fi Radio</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm input-sm"
+            id="bb-hw_mode" name="value">
+            <option selected value="{{ hw_mode }}">
+            {% if hw_mode == 'a' %}802.11a (5 GHz)
+            {% elif hw_mode == 'b' %}802.11b (2.4 GHz)
+            {% elif hw_mode == 'g' %}802.11g (2.4 GHz)
+            {% elif hw_mode == 'ad' %}802.11ad (60 GHz)
+            {% elif hw_mode == '0' %}Disabled
+            {% else %}Unknown
+            {% endif %}</option>
+            {% if not hw_mode == '0' %}<option value="0">Disabled</option>{% endif %}
+            {% if not hw_mode == 'a' %}<option value="a">802.11a (5 GHz)</option>{% endif %}
+            {% if not hw_mode == 'b' %}<option value="b">802.11b (2.4 GHz)</option>{% endif %}
+            {% if not hw_mode == 'g' %}<option value="g">802.11g (2.4 GHz)</option>{% endif %}
+            {% if not hw_mode == 'ad' %}<option value="ad">802.11ad (60 GHz)</option>{% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="HW_MODE">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-warning btn-secondary" type="submit"
+              data-toggle="popover" title="HW_MODE" data-trigger="hover"
+              data-content="Wi-Fi radio hardware setting.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      {% if hw_mode in ['a', 'b', 'g', 'ad'] %}
+   
+      <div class="col-sm-3">
+        <label for="bb-ssid">Wi-Fi Network</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-ssid" class="form-control input-sm" type="text" name="value" value="{{ ssid }}">
+          <input class="form-control" type="hidden" name="name" value="SSID">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Wi-Fi Network" data-trigger="hover"
+              data-content="Wi-Fi network/SSID name.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      <div class="col-sm-3">
+        <label for="bb-wpa2">WPA2</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-wpa2" name="value">
+            <option selected value="{{ wpa2 }}">
+            {% if wpa2 == '0' %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if wpa2 == '0' %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="WPA2">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="WPA2" data-trigger="hover"
+              data-content="Enable or disable WPA2-Personal (TKIP/PSK). If disabled, creates an open/unsecured Wi-Fi network, which anyone can join.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      <div class="col-sm-3">
+        <label for="bb-password">Wi-Fi Password</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-password" class="form-control input-sm" type="text" name="value" value="{{ passphrase }}">
+          <input class="form-control" type="hidden" name="name" value="PASSPHRASE">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Wi-Fi Password" data-trigger="hover"
+              data-content="Wi-Fi password/passphrase.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      
+      <div class="col-sm-3">
+        <label for="bb-ieee80211n">802.11N</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-ieee80211n" name="value">
+            <option selected value="{{ ieee80211n }}">
+            {% if ieee80211n == '0' %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if ieee80211n == '0' %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="IEEE80211N">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="IEEE 802.11N" data-trigger="hover"
+              data-content="Wi-Fi High Throughput (HT), requires WMM to be enabled.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      <div class="col-sm-3">
+        <label for="bb-wmm">WMM</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm"
+            id="bb-wmm" name="value">
+            <option selected value="{{ wmm }}">
+            {% if wmm == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if wmm == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="WMM">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="WMM" data-trigger="hover"
+              data-content="Wi-Fi Multimedia (WMM).">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      <div class="col-sm-3">
+        <label for="bb-ieee80211ac">802.11AC</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-ieee80211ac" name="value">
+            <option selected value="{{ ieee80211ac }}">
+            {% if ieee80211ac == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if ieee80211ac == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="IEEE80211AC">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="IEEE 802.11AC" data-trigger="hover"
+              data-content="Wi-Fi Very High Throughput (VHT), requires WMM to be enabled.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      <div class="col-sm-3">
+        <label for="bb-ieee80211d">802.11D</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-ieee80211d" name="value">
+            <option selected value="{{ ieee80211d }}">
+            {% if ieee80211d == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if ieee80211d == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="IEEE80211D">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="IEEE 802.11D" data-trigger="hover"
+              data-content="Advertise allowed channels and transmit power levels based on location.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      <div class="col-sm-3">
+        <label for="bb-ieee80211h">802.11H</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-ieee80211h" name="value">
+            <option selected value="{{ ieee80211h }}">
+            {% if ieee80211h == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if ieee80211h == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="IEEE80211H">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary" type="submit"
+              data-toggle="popover" title="IEEE 802.11H" data-trigger="hover"
+              data-content="This enables radar detection and DFS support if available (used only with 802.11D).">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      {% endif %}
+
+      {% endif %}
+
+      <div class="col-sm-3">
+        <label for="bb-af">Address Family (IP)</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-af" name="value">
+            <option selected value="{{ af }}">
+            {% if af == 4 %}IPv4{% endif %}
+            {% if af == 6 %}IPv6{% endif %}
+            {% if af == 0 %}Autodetect{% endif %}</option>
+            <option value="0">Autodetect</option>
+            <option value="4">IPv4</option>
+            <option value="6">IPv6</option>
+          </select>
+          <input class="form-control" type="hidden" name="name" value="AF">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-warning btn-secondary" type="submit"
+              data-toggle="popover" title="IPv6 (experimental)" data-trigger="hover"
+              data-content="IPv6 support (default IPv4 only). IPv4 is always enabled regardless of this setting.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      {% if not device_type == 5 %}
+      <div class="col-sm-3">
+        <label for="bb-ipv6">Tunnel IPv6</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-ipv6" name="value">
+            <option selected value="{{ ipv6 }}">
+            {% if ipv6 == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if ipv6 == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="TUN_IPV6">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-warning btn-secondary" type="submit"
+              data-toggle="popover" title="Tunnel IPv6 (experimental)" data-trigger="hover"
+              data-content="IPv6 support inside the tunnel. By default only IPv4 is carried through the tunnel. Requires exit nodes to have IPv6 connectivity.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not free %}
+      <div class="col-sm-3">
+        <label for="bb-stunnel">stunnel</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-stunnel" name="value">
+            <option selected value="{{ stunnel }}">
+            {% if stunnel == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if stunnel == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="STUNNEL">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-warning btn-secondary {% if not feature_stunnel %}disabled{% endif %}"
+              type="submit" {% if not feature_stunnel %}disabled="disabled"{% endif %}
+              data-toggle="popover" title="stunnel (experimental)" data-trigger="hover"
+              data-content="Obfuscate OpenVPN traffic through stunnel proxy. This will result in lower performance, but may enable stable VPN connection in environments where deep packet inspection could otherwise interfere with it. Incompatible with WANProxy mode.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not paired and not server %}
+      <div class="col-sm-3">
+        <label for="bb-pair">Pairing</label>
+        <form method="POST" role="form" action="pair">
+        <div class="input-group input-group-sm btn-sm">
+          <input class="form-control input-sm" id="bb-pair" placeholder="GUID" type="text" name="PAIRED_DEVICE_GUID" value="{{ paired }}">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Device Pairing" data-trigger="hover"
+              data-content="If you have two or more devices, you can pair them to create a VPN. Requires one of the other devices to be configured in server mode (e.g. at home or office) and firewall port forwarding configured ({{ openvpn_port }}/tcp and {{ openvpn_port }}/udp).">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not paired %}
+      <div class="col-sm-3">
+        <label for="bb-mode">Mode</label>
+        <form method="POST" role="form" action="set">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-mode" name="value">
+            <option selected value="{{ device_type }}">{% if device_type == 2 %}Unblocking{% endif %}{% if device_type == 4 %}Server{% endif %}{% if device_type == 5 %}VPN{% endif %}{% if device_type == 1 %}Exit Node{% endif %}{% if device_type == 3 %}Mixed{% endif %}</option>
+            <option value="2">Unblocking</option>
+            <option value="4">Server (free)</option>
+            <option value="5">VPN (free)</option>
+          </select>
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Device Mode" data-trigger="hover"
+              data-content="Select unblocking mode for streaming. Select server mode if you want to connect two or more devices together in a secure private network (useful when travelling/away from home). Select VPN mode if you want to connect to supported 3rd party VPN providers.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not free %}
+      <div class="col-sm-3">
+        <label for="bb-wanproxy">WAN Acceleration</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-wanproxy" name="value">
+            {% if wanproxy %}
+            <option selected value="{{ wanproxy }}">{{ wanproxy }}</option>
+            {% else %}
+            <option selected value="">Disabled</option>
+            {% endif %}
+            <option value="SSH">SSH</option>
+            <option value="SOCAT">SOCAT</option>
+            <option value="">Disabled</option>
+          </select>
+          <input class="form-control" type="hidden" name="name" value="WANPROXY">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-danger btn-secondary {% if not feature_wanproxy %}disabled{% endif %}"
+              type="submit" {% if not feature_wanproxy %}disabled="disabled"{% endif %}
+              data-toggle="popover" title="WAN Acceleration (experimental)" data-trigger="hover"
+              data-content="Controls WAN acceleration transport in TCP tunnel protocol mode (default None). SOCAT transport provides for potentially better performance than SSH. Incompatible with stunnel mode.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if not server %}
+      <div class="col-sm-3">
+        <label for="bb-policy-routing">Policy Routing</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm"
+            id="bb-policy-routing" name="value">
+            {% if not policy_routing %}<option selected value="0">Disabled</option>
+            <option value="1">Enable</option>
+            {% else %}
+            <option selected value="1">Enabled</option>
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="POLICY_ROUTING">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Policy Routing" data-trigger="hover"
+              data-content="When enabled, route only selected services via the tunnel. When disabled, route everyting via the tunnel, except selected services.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if device_type in [1, 3] %}
+      <div class="col-sm-3">
+        <label for="bb-tun-mtu">MTU</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-tun-mtu" class="form-control input-sm" type="text" name="value" value="{{ tun_mtu }}">
+          <input class="form-control" type="hidden" name="name" value="TUN_MTU">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-danger" type="submit"
+              data-toggle="popover" title="Tunnel MTU" data-trigger="hover"
+              data-content="Tunnel interface MTU (default 1500).">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+   
+      <div class="col-sm-3">
+        <label for="bb-fragment">UDP Fragment</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-fragment" class="form-control input-sm" type="text" name="value" value="{{ fragment }}">
+          <input class="form-control" type="hidden" name="name" value="FRAGMENT">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-danger" type="submit"
+              data-toggle="popover" title="UDP Fragment" data-trigger="hover"
+              data-content="Enable internal datagram fragmentation so that no UDP datagrams are sent which are larger than max bytes. To alleviate connection problems, try setting to value below tunnel MTU (e.g. 1300).">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+      {% endif %}
+
+      <div class="col-sm-3">
+        <label for="bb-local_dns">Local DNS</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-local_dns" name="value">
+            <option selected value="{{ local_dns }}">
+            {% if local_dns == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if local_dns == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="LOCAL_DNS">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Local DNS" data-trigger="hover"
+              data-content="Force DNS requests to go via the tunnel. By default DNS stays local.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      <div class="col-sm-3">
+        <label for="bb-dns_servers">DNS Servers</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-dns_servers" class="form-control input-sm" type="text" name="value" value="{{ dns_servers }}">
+          <input class="form-control" type="hidden" name="name" value="DNS_SERVERS">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="DNS Servers" data-trigger="hover"
+              data-content="Specify custom DNS servers using space separated list of IP addresses.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      <div class="col-sm-3">
+        <label for="bb-dns6_servers">DNS IPv6</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <input id="bb-dns6_servers" class="form-control input-sm" type="text" name="value" value="{{ dns6_servers }}">
+          <input class="form-control" type="hidden" name="name" value="DNS6_SERVERS">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="DNS Servers (IPv6)" data-trigger="hover"
+              data-content="Specify custom IPv6 DNS severs using space separated list of IPv6 addresses.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+      <div class="col-sm-3">
+        <label for="bb-live_logs">Logs</label>
+        <form method="POST" role="form" action="config">
+        <div class="input-group input-group-sm btn-sm">
+          <select class="form-control form-control-sm btn-sm" id="bb-live_logs" name="value">
+            <option selected value="{{ live_logs }}">
+            {% if live_logs == 0 %}Disabled{% else %}Enabled {% endif %}</option>
+            {% if live_logs == 0 %}
+            <option value="1">Enable</option>
+            {% else %}
+            <option value="0">Disable</option>
+            {% endif %}
+          </select>
+          <input class="form-control" type="hidden" name="name" value="LIVE_LOGS">
+          <input class="form-control" type="hidden" name="guid" value="{{ guid }}">
+          <input class="form-control" type="hidden" name="device_type" value="{{ device_type }}">
+          <span class="input-group-btn">
+            <button class="btn btn-sm btn-default btn-secondary" type="submit"
+              data-toggle="popover" title="Local DNS" data-trigger="hover"
+              data-content="Enable log streaming from OpenVPN processes running on the box. Logs are piped and never stored. CA root certificate must be installed and trusted for embedded log viewer. Uninterrupted log streaming requires log viewer to be opened in a separate tab.">Update
+              <span class="glyphicon glyphicon-question-sign" aria-hidden="true"></span>
+            </button>
+          </span>
+        </div>
+        </form>
+      </div>
+
+    </div>
+    </div>
+
+<!-- config end -->
+
+
+    {% else %}
+
+    <div class="well well-sm text-center">
+      <div class="text-center text-muted small">This device is disabled.</div>
+    </div>
+    
+    {% endif %}
+
+    <div class="well well-sm text-center"><a target="_blank" href="https://www.youtube.com/watch?v=nn2FB1P_Mn8">Contact Support</a> (<a target="_blank" href="https://stats.uptimerobot.com/mOvZXsAx7">uptime</a>)
+      <div class="text-center text-muted small">
+        Email <a href="mailto:blackbox@unzoner.com">@black.box</a>, IRC <a target="_blank" href="https://webchat.freenode.net/?channels=#netflix-proxy">#netflix-proxy</a> on Freenode or live chat icon bottom right.
+      </div>
+    </div>
+   
+  </div>
+  
+{%- block footer %}
+<div class="text-center text-muted small"><footer>&copy 2019 <a href="http://unzoner.com/" target="_blank">Unzoner</a>; icons by <a target="_blank" href="http://glyphicons.com/">Glyphicons</a>; error pages by <a target="_blank" href="https://statuspage.io/">StatusPage</a></footer></div>
+
+{%- endblock footer %}
+
+{%- endblock content %}

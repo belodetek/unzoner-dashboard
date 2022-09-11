@@ -1,0 +1,120 @@
+{# ``base.html`` is the template all our other templates derive from. While
+   Flask-Bootstrap ships with its own base, it is good form to create a custom
+   one for our app, as it allows customizing some aspects.
+
+   Deriving from bootstap/base.html gives us a basic page scaffoling.
+
+   You can find additional information about template inheritance at
+
+   http://jinja.pocoo.org/docs/templates/#template-inheritance
+#}
+{%- extends "bootstrap/base.html" %}
+
+{# We also set a default title, usually because we might forget to set one.
+   In our sample app, we will most likely just opt not to change it #}
+{% block title %}black.box dashboard{% endblock %}
+
+{# While we are at it, we also enable fixes for legacy browsers. First we
+   import the necessary macros: #}
+{% import "bootstrap/fixes.html" as fixes %}
+
+{# Then, inside the head block, we apply these. To not replace the header,
+   ``super()`` is used: #}
+{% block head %}
+    {{super()}}
+    <link rel="icon" href="{{url_for('static', filename='blackbox.ico')}}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{url_for('static', filename='blackbox.ico')}}" type="image/x-icon">
+    <link rel="manifest" href="{{url_for('static', filename='manifest.json')}}">
+
+{#- Docs: http://pythonhosted.org/Flask-Bootstrap/macros.html#fixes
+   The sample application already contains the required static files. #}
+{{fixes.ie8()}}
+{%- endblock %}
+
+{# Adding our own CSS files is also done here. Check the documentation at
+   http://pythonhosted.org/Flask-Bootstrap/basic-usage.html#available-blocks
+   for an overview. #}
+{% block styles -%}
+    {{super()}}  {# do not forget to call super or Bootstrap's own stylesheets
+                    will disappear! #}
+    <link rel="stylesheet" type="text/css"
+          href="{{url_for('static', filename='blackbox.css')}}">
+    <link rel="stylesheet"
+          href="{{url_for('static', filename='bootstrap.icon-large.min.css')}}">
+    <link rel="stylesheet"
+          href="{{url_for('static', filename='flags.css')}}">
+    <link rel="stylesheet"
+          href="{{url_for('static', filename='font-awesome/css/font-awesome.min.css')}}">
+    <style>           
+        .popover-title {
+            font-size: 12px;
+        }
+        .popover-content {
+            font-size: 10px;
+        }
+        #grayed-out {
+            opacity: 0.4;
+            filter: alpha(opacity=40); /* msie */
+        }
+    </style>
+    <style type="text/css">
+        body {
+            padding-top: 60px;
+        }
+
+        /* http://davidwalsh.name/html5-hidden */
+        *[hidden] { display: none; }
+
+        /* Action hints are slidedowns, hidden by default */
+        .bitcoin-action-hint {
+            display: none;
+        }
+
+        /* Show dashed underlining so people get a hint it's clickable */
+        .bitcoin-address-container .bitcoin-address {
+            border-bottom: 1px dashed gray;
+            cursor: pointer;
+        }
+
+        /* Center QR code image */
+        .bitcoin-address-qr-container > img,
+        .bitcoin-address-qr-container > canvas {
+            margin: 0 auto;
+        }
+
+        /* bitcoinprices.js -  for bitcoinprices, donation nominated in USD */
+        .clickable-price {
+            cursor: pointer;
+            border-bottom: 1px #888 dashed;
+        }
+
+        /* Demo page splash styling */
+        #bitcoin-icon {
+            font-size: 128px;
+            color: #F7931A;
+        }
+
+        #bitcoin-icon .fa-circle {
+            text-shadow: 0 3px 3px rgba(32, 32, 32, 0.3);
+        }
+
+        #bitcoin-icon .fa-btc {
+            text-shadow: 0 -1px 1px black;
+            -moz-transform: rotate(20deg);
+            -webkit-transform: rotate(20deg);
+            transform: rotate(20deg);
+        }
+
+        .example-row {
+            margin: 30px 0;
+        }
+
+        .example-heading {
+            color: #357ebd;
+        }
+    </style>
+   
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.12.2/css/bootstrap-select.min.css">
+
+{% endblock %}
