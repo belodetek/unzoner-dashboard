@@ -1,4 +1,6 @@
 option_settings:
+  aws:ec2:vpc:
+    AssociatePublicIpAddress: true
   aws:elasticbeanstalk:application:environment:
     DEBUG: ${DEBUG}
     DEFAULT_AF: ${DEFAULT_AF}
